@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 
-import argparse
 import json
 import os
 import subprocess
 import sys
 from datetime import datetime, timezone
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 POSTS_FILE = os.path.join(SCRIPT_DIR, "posts.json")
 
 
@@ -52,34 +51,30 @@ def git_push(text):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="post a thought to micro")
-    parser.add_argument("text", nargs="?", help="the post text")
-    parser.add_argument("--tags", "-t", help="comma-separated tags")
-    args = parser.parse_args()
-
-    text = args.text
-    tags_str = args.tags
-
+    text = input("> ").strip()
     if not text:
-        text = input("> ").strip()
-        if not text:
-            print("empty post, nothing to do.")
-            sys.exit(1)
-        tags_str = input("tags (comma-separated, or enter to skip): ").strip()
+        print("empty post, nothing to do.")
+        sys.exit(1)
+    tags_str = input("tags (comma-separated, or enter to skip): ").strip()
 
     tags = []
     if tags_str:
         tags = [t.strip() for t in tags_str.split(",") if t.strip()]
+
+    print(f"\n  {text}")
+    if tags:
+        print(f"  tags: {', '.join('#' + t for t in tags)}")
+    confirm = input("\npost? (Y/n) ").strip().lower()
+    if confirm not in ("y", "yes", ""):
+        print("cancelled.")
+        sys.exit(0)
 
     post = make_post(text, tags)
     posts = load_posts()
     posts.insert(0, post)
     save_posts(posts)
 
-    print(f"\nposted: {text}")
-    if tags:
-        print(f"  tags: {', '.join('#' + t for t in tags)}")
-
+    print("posted")
     git_push(text)
 
 
