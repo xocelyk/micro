@@ -1,0 +1,53 @@
+name: post
+
+on:
+  workflow_dispatch:
+    inputs:
+      text:
+        description: post text
+        required: true
+      tags:
+        description: comma-separated tags
+        required: false
+        default: ""
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: add post
+        run: |
+          python3 - <<'SCRIPT'
+          import json
+          from datetime import datetime, timezone
+
+          text = """${{ github.event.inputs.text }}"""
+          tags_str = """${{ github.event.inputs.tags }}"""
+
+          now = datetime.now(timezone.utc).astimezone()
+          post = {
+              "id": now.strftime("%Y%m%d%H%M%S"),
+              "text": text.strip(),
+              "tags": [t.strip() for t in tags_str.split(",") if t.strip()],
+              "timestamp": now.isoformat(),
+          }
+
+          with open("posts.json", "r") as f:
+              posts = json.load(f)
+          posts.insert(0, post)
+          with open("posts.json", "w") as f:
+              json.dump(posts, f, indent=2, ensure_ascii=False)
+              f.write("\n")
+          SCRIPT
+      - name: commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TEXT="${{ github.event.inputs.text }}"
+          PREVIEW="${TEXT:0:50}"
+          git add posts.json
+          git commit -m "post: ${PREVIEW}"
+          git push
