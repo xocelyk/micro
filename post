@@ -145,7 +145,7 @@ def editor():
             ("class:hint", "  "),
             ("class:key", "Enter "), ("class:hint", "post"),
             ("class:sep", "  ·  "),
-            ("class:key", "Esc "), ("class:hint", "cancel"),
+            ("class:key", "Ctrl+C "), ("class:hint", "cancel"),
             ("class:sep", "  ·  "),
             ("class:key", "Alt+Enter "), ("class:hint", "newline"),
             ("class:sep", "  ·  "),
@@ -175,7 +175,6 @@ def editor():
         if event.app.layout.has_focus(body_window):
             event.current_buffer.insert_text("\n")
 
-    @kb.add("escape")
     @kb.add("c-c")
     def cancel(event):
         event.app.exit(result="cancel")
