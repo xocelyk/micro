@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from datetime import datetime, timezone
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+POSTS_FILE = os.path.join(SCRIPT_DIR, "posts.json")
+
+
+def load_posts():
+    if not os.path.exists(POSTS_FILE):
+        return []
+    with open(POSTS_FILE, "r") as f:
+        content = f.read().strip()
+        if not content:
+            return []
+        return json.loads(content)
+
+
+def save_posts(posts):
+    with open(POSTS_FILE, "w") as f:
+        json.dump(posts, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+
+def make_post(text, tags):
+    now = datetime.now(timezone.utc).astimezone()
+    return {
+        "id": now.strftime("%Y%m%d%H%M%S"),
+        "text": text,
+        "tags": tags,
+        "timestamp": now.isoformat(),
+    }
+
+
+def git_push(text):
+    preview = text[:50] + ("..." if len(text) > 50 else "")
+    msg = f"post: {preview}"
+    try:
+        subprocess.run(["git", "add", "posts.json"], cwd=SCRIPT_DIR, check=True)
+        subprocess.run(["git", "commit", "-m", msg], cwd=SCRIPT_DIR, check=True)
+        subprocess.run(["git", "push"], cwd=SCRIPT_DIR, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"git error: {e}", file=sys.stderr)
+        print("post saved locally but not pushed.", file=sys.stderr)
+        return False
+    return True
+
+
+def main():
+    parser = argparse.ArgumentParser(description="post a thought to micro")
+    parser.add_argument("text", nargs="?", help="the post text")
+    parser.add_argument("--tags", "-t", help="comma-separated tags")
+    args = parser.parse_args()
+
+    text = args.text
+    tags_str = args.tags
+
+    if not text:
+        text = input("> ").strip()
+        if not text:
+            print("empty post, nothing to do.")
+            sys.exit(1)
+        tags_str = input("tags (comma-separated, or enter to skip): ").strip()
+
+    tags = []
+    if tags_str:
+        tags = [t.strip() for t in tags_str.split(",") if t.strip()]
+
+    post = make_post(text, tags)
+    posts = load_posts()
+    posts.insert(0, post)
+    save_posts(posts)
+
+    print(f"\nposted: {text}")
+    if tags:
+        print(f"  tags: {', '.join('#' + t for t in tags)}")
+
+    git_push(text)
+
+
+if __name__ == "__main__":
+    main()

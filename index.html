@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>micro</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #fafafa;
+      color: #1a1a1a;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 2rem 1.25rem;
+    }
+
+    header {
+      margin-bottom: 2rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid #e5e5e5;
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    header .subtitle {
+      color: #999;
+      font-size: 0.85rem;
+      margin-top: 0.15rem;
+    }
+
+    #filter-bar {
+      display: none;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1.25rem;
+      font-size: 0.8rem;
+      color: #666;
+    }
+
+    #filter-bar.active { display: flex; }
+
+    #filter-bar .tag-pill {
+      background: #e0e0e0;
+    }
+
+    #filter-bar .clear-filter {
+      cursor: pointer;
+      color: #999;
+      text-decoration: none;
+      margin-left: 0.25rem;
+    }
+
+    #filter-bar .clear-filter:hover { color: #1a1a1a; }
+
+    .post {
+      padding: 1.25rem 0;
+      border-bottom: 1px solid #ebebeb;
+    }
+
+    .post:last-child { border-bottom: none; }
+
+    .post-text {
+      font-size: 1.05rem;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .post-text a {
+      color: #0066cc;
+      text-decoration: none;
+    }
+
+    .post-text a:hover { text-decoration: underline; }
+
+    .post-meta {
+      margin-top: 0.5rem;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      font-size: 0.78rem;
+      color: #999;
+    }
+
+    .post-time {
+      cursor: default;
+    }
+
+    .tag-pill {
+      display: inline-block;
+      background: #eee;
+      color: #555;
+      border-radius: 12px;
+      padding: 1px 9px;
+      font-size: 0.72rem;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+
+    .tag-pill:hover { background: #e0e0e0; }
+
+    #empty {
+      color: #bbb;
+      font-size: 0.95rem;
+      margin-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <header>
+      <h1>micro</h1>
+      <p class="subtitle">short thoughts by kyle</p>
+    </header>
+    <div id="filter-bar">
+      <span>showing:</span>
+      <span id="filter-tag" class="tag-pill"></span>
+      <a class="clear-filter" id="clear-filter">&times;</a>
+    </div>
+    <div id="feed"></div>
+  </div>
+  <script>
+    const feed = document.getElementById('feed');
+    const filterBar = document.getElementById('filter-bar');
+    const filterTagEl = document.getElementById('filter-tag');
+    const clearFilterEl = document.getElementById('clear-filter');
+    let activeFilter = null;
+
+    function relativeTime(iso) {
+      const now = Date.now();
+      const then = new Date(iso).getTime();
+      const diff = now - then;
+      const s = Math.floor(diff / 1000);
+      const m = Math.floor(s / 60);
+      const h = Math.floor(m / 60);
+      const d = Math.floor(h / 24);
+      if (s < 60) return 'just now';
+      if (m < 60) return m + 'm ago';
+      if (h < 24) return h + 'h ago';
+      if (d < 7) return d + 'd ago';
+      const date = new Date(iso);
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const thisYear = new Date().getFullYear();
+      if (date.getFullYear() === thisYear) {
+        return months[date.getMonth()] + ' ' + date.getDate();
+      }
+      return months[date.getMonth()] + ' ' + date.getFullYear();
+    }
+
+    function absoluteTime(iso) {
+      const d = new Date(iso);
+      return d.toLocaleString();
+    }
+
+    function linkify(text) {
+      return text.replace(
+        /(https?:\/\/[^\s<]+)/g,
+        '<a href="$1" target="_blank" rel="noopener">$1</a>'
+      );
+    }
+
+    function filterByTag(tag) {
+      activeFilter = tag;
+      filterTagEl.textContent = '#' + tag;
+      filterBar.classList.add('active');
+      document.querySelectorAll('.post').forEach(el => {
+        const tags = JSON.parse(el.dataset.tags);
+        el.style.display = tags.includes(tag) ? '' : 'none';
+      });
+    }
+
+    function clearFilter() {
+      activeFilter = null;
+      filterBar.classList.remove('active');
+      document.querySelectorAll('.post').forEach(el => {
+        el.style.display = '';
+      });
+    }
+
+    clearFilterEl.addEventListener('click', clearFilter);
+
+    function renderPosts(posts) {
+      if (!posts.length) {
+        feed.innerHTML = '<p id="empty">nothing here yet.</p>';
+        return;
+      }
+      posts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      posts.forEach(post => {
+        const div = document.createElement('div');
+        div.className = 'post';
+        div.dataset.tags = JSON.stringify(post.tags || []);
+
+        let html = '<div class="post-text">' + linkify(post.text) + '</div>';
+        html += '<div class="post-meta">';
+        html += '<span class="post-time" title="' + absoluteTime(post.timestamp) + '">' + relativeTime(post.timestamp) + '</span>';
+        if (post.tags && post.tags.length) {
+          post.tags.forEach(tag => {
+            html += ' <span class="tag-pill" data-tag="' + tag + '">#' + tag + '</span>';
+          });
+        }
+        html += '</div>';
+
+        div.innerHTML = html;
+        div.querySelectorAll('.tag-pill').forEach(pill => {
+          pill.addEventListener('click', () => filterByTag(pill.dataset.tag));
+        });
+        feed.appendChild(div);
+      });
+    }
+
+    fetch('posts.json')
+      .then(r => r.json())
+      .then(renderPosts)
+      .catch(() => {
+        feed.innerHTML = '<p id="empty">could not load posts.</p>';
+      });
+  </script>
+</body>
+</html>
