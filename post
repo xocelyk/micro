@@ -6,6 +6,16 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
+from prompt_toolkit import Application
+from prompt_toolkit.buffer import Buffer
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.layout.containers import HSplit, VSplit, Window
+from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
+from prompt_toolkit.layout.dimension import Dimension as D
+from prompt_toolkit.layout.layout import Layout
+from prompt_toolkit.styles import Style
+from prompt_toolkit.widgets import Frame
+
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 POSTS_FILE = os.path.join(SCRIPT_DIR, "posts.json")
 
@@ -50,24 +60,171 @@ def git_push(text):
     return True
 
 
+def recent_posts_widget():
+    posts = load_posts()[:3]
+    if not posts:
+        return []
+
+    fragments = []
+    for i, post in enumerate(posts):
+        ts = post.get("timestamp", "")
+        try:
+            dt = datetime.fromisoformat(ts)
+            date_str = dt.strftime("%b %d, %H:%M")
+        except (ValueError, TypeError):
+            date_str = ""
+
+        text = post.get("text", "")
+        lines = text.split("\n")
+        preview = lines[0][:80]
+        if len(lines) > 1 or len(lines[0]) > 80:
+            preview += "..."
+
+        fragments.append(("class:post-text", f"  {preview}\n"))
+        tags = post.get("tags", [])
+        meta = ""
+        if tags:
+            meta += " ".join(f"#{t}" for t in tags) + "  "
+        meta += date_str
+        fragments.append(("class:post-meta", f"  {meta}\n"))
+        if i < len(posts) - 1:
+            fragments.append(("class:post-meta", "\n"))
+
+    return [
+        Window(
+            height=1,
+            content=FormattedTextControl([("class:title", "  recent")]),
+        ),
+        Window(height=1),
+        Window(
+            content=FormattedTextControl(fragments),
+            dont_extend_height=True,
+            wrap_lines=True,
+        ),
+        Window(height=1),
+    ]
+
+
+def editor():
+    body_buffer = Buffer(multiline=True)
+    tags_buffer = Buffer()
+
+    body_window = Window(
+        content=BufferControl(buffer=body_buffer),
+        wrap_lines=True,
+        height=D(min=1, max=10),
+        dont_extend_height=True,
+    )
+    tags_window = Window(content=BufferControl(buffer=tags_buffer), height=1)
+
+    inner = HSplit([
+        Window(height=1),
+        body_window,
+        Window(height=1),
+        Window(height=1, content=FormattedTextControl([("class:label", "  tags")])),
+        tags_window,
+        Window(height=1),
+    ])
+
+    padded = VSplit([
+        Window(width=2),
+        inner,
+        Window(width=2),
+    ])
+
+    title = Window(
+        height=1,
+        content=FormattedTextControl([("class:title", "  new post")]),
+    )
+
+    framed = Frame(padded)
+
+    hint = Window(
+        height=1,
+        content=FormattedTextControl([
+            ("class:hint", "  "),
+            ("class:key", "Enter "), ("class:hint", "post"),
+            ("class:sep", "  ·  "),
+            ("class:key", "Esc "), ("class:hint", "cancel"),
+            ("class:sep", "  ·  "),
+            ("class:key", "Alt+Enter "), ("class:hint", "newline"),
+            ("class:sep", "  ·  "),
+            ("class:key", "Tab "), ("class:hint", "tags"),
+        ]),
+    )
+
+    pad = 4
+    root = HSplit([
+        Window(height=D(weight=1)),
+        VSplit([
+            Window(width=pad),
+            HSplit(recent_posts_widget() + [title, framed, hint]),
+            Window(width=pad),
+        ]),
+        Window(height=D(weight=1)),
+    ])
+
+    kb = KeyBindings()
+
+    @kb.add("enter", eager=True)
+    def submit(event):
+        event.app.exit(result="submit")
+
+    @kb.add("escape", "enter")
+    def newline(event):
+        if event.app.layout.has_focus(body_window):
+            event.current_buffer.insert_text("\n")
+
+    @kb.add("escape")
+    @kb.add("c-c")
+    def cancel(event):
+        event.app.exit(result="cancel")
+
+    @kb.add("tab")
+    def toggle_focus(event):
+        if event.app.layout.has_focus(body_window):
+            event.app.layout.focus(tags_window)
+        else:
+            event.app.layout.focus(body_window)
+
+    style = Style.from_dict({
+        "frame.border": "#cccccc",
+        "title": "#7ab0d2 bold",
+        "label": "#666666",
+        "key": "#999999",
+        "hint": "#555555",
+        "sep": "#444444",
+        "post-text": "#888888",
+        "post-meta": "#555555",
+    })
+
+    app = Application(
+        layout=Layout(root, focused_element=body_window),
+        key_bindings=kb,
+        full_screen=True,
+        style=style,
+    )
+    result = app.run()
+
+    if result == "cancel":
+        return None
+
+    text = body_buffer.text.strip()
+    tags_str = tags_buffer.text.strip()
+    tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else []
+    return (text, tags)
+
+
 def main():
-    text = input("> ").strip()
+    result = editor()
+    if result is None:
+        print("cancelled.")
+        sys.exit(0)
+
+    text, tags = result
     if not text:
         print("empty post, nothing to do.")
         sys.exit(1)
-    tags_str = input("tags (comma-separated, or enter to skip): ").strip()
-
-    tags = []
-    if tags_str:
-        tags = [t.strip() for t in tags_str.split(",") if t.strip()]
-
-    print(f"\n  {text}")
-    if tags:
-        print(f"  tags: {', '.join('#' + t for t in tags)}")
-    confirm = input("\npost? (Y/n) ").strip().lower()
-    if confirm not in ("y", "yes", ""):
-        print("cancelled.")
-        sys.exit(0)
 
     post = make_post(text, tags)
     posts = load_posts()

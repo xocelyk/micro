@@ -144,11 +144,9 @@
     function formatTime(iso) {
       const d = new Date(iso);
       const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      let hours = d.getHours();
+      const hours = String(d.getHours()).padStart(2, '0');
       const minutes = String(d.getMinutes()).padStart(2, '0');
-      const ampm = hours >= 12 ? 'pm' : 'am';
-      hours = hours % 12 || 12;
-      return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear() + ' ' + hours + ':' + minutes + ampm;
+      return months[d.getMonth()] + ' ' + d.getDate() + ', ' + hours + ':' + minutes;
     }
 
     function linkify(text) {
