@@ -4,148 +4,132 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>micro</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap" rel="stylesheet">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      background: #fafafa;
-      color: #1a1a1a;
-      font-family: "Lato", sans-serif;
-      line-height: 1.6;
-      -webkit-font-smoothing: antialiased;
+      background: #fff;
+      color: #333;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      line-height: 1.5;
+      font-size: 12px;
     }
 
     #container {
-      max-width: 600px;
+      max-width: 560px;
       margin: 0 auto;
       padding: 2rem 1.25rem;
     }
 
     header {
-      margin-bottom: 2rem;
-      padding-bottom: 1rem;
-      border-bottom: 1px solid #e5e5e5;
+      margin-bottom: 1.5rem;
     }
 
     header h1 {
-      font-size: 1.4rem;
-      font-weight: 600;
-      letter-spacing: -0.02em;
-    }
-
-    header .subtitle {
+      font-size: 1rem;
+      font-weight: normal;
       color: #999;
-      font-size: 0.85rem;
-      margin-top: 0.15rem;
     }
 
     #filter-bar {
       display: none;
       align-items: center;
-      gap: 0.5rem;
-      margin-bottom: 1.25rem;
+      gap: 0.4rem;
+      margin-bottom: 1rem;
       font-size: 0.8rem;
-      color: #666;
+      color: #999;
     }
 
     #filter-bar.active { display: flex; }
 
-    #filter-bar .tag-pill {
-      background: #e0e0e0;
-    }
-
     #filter-bar .clear-filter {
       cursor: pointer;
-      color: #999;
+      color: #ccc;
       text-decoration: none;
-      margin-left: 0.25rem;
     }
 
-    #filter-bar .clear-filter:hover { color: #1a1a1a; }
+    #filter-bar .clear-filter:hover { color: #333; }
 
     .post {
-      padding: 1rem 1.25rem;
-      margin-bottom: 0.75rem;
-      background: #fff;
-      border: 1px solid #e5e5e5;
-      border-radius: 8px;
+      padding: 1.25rem 0;
+      border-bottom: 1px solid #eee;
+    }
+
+    .post:last-child {
+      border-bottom: none;
     }
 
     .post-title {
-      font-size: 0.95rem;
-      font-weight: 700;
-      margin-bottom: 0.3rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 0.2rem;
     }
 
     .post-text {
-      font-size: 0.92rem;
-      line-height: 1.6;
-      white-space: pre-wrap;
+      font-size: 0.9rem;
+      line-height: 1.5;
       word-wrap: break-word;
     }
 
     .post-text.collapsed {
-      max-height: 6.4em;
+      display: -webkit-box;
+      -webkit-line-clamp: 4;
+      -webkit-box-orient: vertical;
       overflow: hidden;
-      -webkit-mask-image: linear-gradient(to bottom, #000 60%, transparent 100%);
-      mask-image: linear-gradient(to bottom, #000 60%, transparent 100%);
     }
 
     .post-toggle {
       background: none;
       border: none;
-      color: #0066cc;
+      color: #999;
       cursor: pointer;
-      font-size: 0.78rem;
-      padding: 0.25rem 0 0;
+      font-size: 0.8rem;
+      padding: 0.15rem 0 0;
       font-family: inherit;
     }
 
-    .post-toggle:hover { text-decoration: underline; }
+    .post-toggle:hover { color: #333; }
 
     .post-text a {
-      color: #0066cc;
-      text-decoration: none;
+      color: #333;
+      text-decoration: underline;
     }
 
-    .post-text a:hover { text-decoration: underline; }
-
     .post-meta {
-      margin-top: 0.5rem;
+      margin-top: 0.35rem;
       display: flex;
       align-items: center;
       flex-wrap: wrap;
       gap: 0.4rem;
-      font-size: 0.73rem;
-      color: #999;
+      font-size: 0.75rem;
+      color: #bbb;
     }
 
     .post-time {
       cursor: default;
     }
 
-    .tag-pill {
-      display: inline-block;
-      background: #eee;
-      color: #555;
-      border-radius: 12px;
-      padding: 1px 9px;
-      font-size: 0.7rem;
+    .tag {
+      color: #bbb;
       cursor: pointer;
-      text-decoration: none;
-      transition: background 0.15s;
     }
 
-    .tag-pill:hover { background: #e0e0e0; }
+    .tag:hover { color: #666; }
 
     #empty {
-      color: #bbb;
-      font-size: 0.95rem;
+      color: #ccc;
+      font-size: 0.9rem;
       margin-top: 2rem;
     }
+    .post-text p { margin: 0 0 0.5em; }
+    .post-text p:last-child { margin-bottom: 0; }
+    .post-text em { font-style: italic; }
+    .post-text strong { font-weight: 600; }
+    .post-text code { background: #f5f5f5; padding: 0.1em 0.3em; border-radius: 2px; font-size: 0.85em; }
+    .post-text pre { background: #f5f5f5; padding: 0.5em; border-radius: 2px; overflow-x: auto; margin: 0.5em 0; }
+    .post-text pre code { background: none; padding: 0; }
+    .post-text ul, .post-text ol { margin: 0.3em 0 0.3em 1.2em; }
+    .post-text blockquote { border-left: 2px solid #ddd; margin: 0.3em 0; padding-left: 0.6em; color: #888; }
   </style>
 </head>
 <body>
@@ -155,11 +139,12 @@
     </header>
     <div id="filter-bar">
       <span>showing:</span>
-      <span id="filter-tag" class="tag-pill"></span>
+      <span id="filter-tag"></span>
       <a class="clear-filter" id="clear-filter">&times;</a>
     </div>
     <div id="feed"></div>
   </div>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script>
     const feed = document.getElementById('feed');
     const filterBar = document.getElementById('filter-bar');
@@ -175,12 +160,7 @@
       return months[d.getMonth()] + ' ' + d.getDate() + ', ' + hours + ':' + minutes;
     }
 
-    function linkify(text) {
-      return text.replace(
-        /(https?:\/\/[^\s<]+)/g,
-        '<a href="$1" target="_blank" rel="noopener">$1</a>'
-      );
-    }
+    marked.setOptions({ breaks: true, gfm: true });
 
     function filterByTag(tag) {
       activeFilter = tag;
@@ -222,7 +202,7 @@
 
         const textDiv = document.createElement('div');
         textDiv.className = 'post-text';
-        textDiv.innerHTML = linkify(post.text);
+        textDiv.innerHTML = marked.parse(post.text);
         div.appendChild(textDiv);
 
         const isLong = (post.text.split('\n').length > 4) || (post.text.length > 300);
@@ -241,7 +221,7 @@
         let metaHtml = '<span class="post-time">' + formatTime(post.timestamp) + '</span>';
         if (post.tags && post.tags.length) {
           post.tags.forEach(tag => {
-            metaHtml += ' <span class="tag-pill" data-tag="' + tag + '">#' + tag + '</span>';
+            metaHtml += ' <span class="tag" data-tag="' + tag + '">#' + tag + '</span>';
           });
         }
         const metaDiv = document.createElement('div');
@@ -249,7 +229,7 @@
         metaDiv.innerHTML = metaHtml;
         div.appendChild(metaDiv);
 
-        metaDiv.querySelectorAll('.tag-pill').forEach(pill => {
+        metaDiv.querySelectorAll('.tag').forEach(pill => {
           pill.addEventListener('click', () => filterByTag(pill.dataset.tag));
         });
         feed.appendChild(div);
