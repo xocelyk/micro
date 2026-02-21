@@ -117,8 +117,6 @@ def editor():
     body_window = Window(
         content=BufferControl(buffer=body_buffer),
         wrap_lines=True,
-        height=D(min=1, max=10),
-        dont_extend_height=True,
     )
     tags_window = Window(content=BufferControl(buffer=tags_buffer), height=1)
 
@@ -235,6 +233,18 @@ def main():
     if not text:
         print("empty post, nothing to do.")
         sys.exit(1)
+
+    print()
+    if title:
+        print(f"  {title}")
+    print(f"  {text[:80]}{'...' if len(text) > 80 else ''}")
+    if tags:
+        print(f"  {' '.join(f'#{t}' for t in tags)}")
+    print()
+    confirm = input("post? (y/n) ").strip().lower()
+    if confirm != "y":
+        print("cancelled.")
+        sys.exit(0)
 
     post = make_post(text, tags, title=title)
     posts = load_posts()
