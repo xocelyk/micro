@@ -3,6 +3,10 @@ name: post
 on:
   workflow_dispatch:
     inputs:
+      title:
+        description: post title (optional)
+        required: false
+        default: ""
       text:
         description: post text
         required: true
@@ -24,6 +28,7 @@ jobs:
           import json
           from datetime import datetime, timezone
 
+          title = """${{ github.event.inputs.title }}""".strip()
           text = """${{ github.event.inputs.text }}"""
           tags_str = """${{ github.event.inputs.tags }}"""
 
@@ -34,6 +39,8 @@ jobs:
               "tags": [t.strip() for t in tags_str.split(",") if t.strip()],
               "timestamp": now.isoformat(),
           }
+          if title:
+              post["title"] = title
 
           with open("posts.json", "r") as f:
               posts = json.load(f)

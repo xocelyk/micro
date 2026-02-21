@@ -67,18 +67,44 @@
     #filter-bar .clear-filter:hover { color: #1a1a1a; }
 
     .post {
-      padding: 1.25rem 0;
-      border-bottom: 1px solid #ebebeb;
+      padding: 1rem 1.25rem;
+      margin-bottom: 0.75rem;
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
     }
 
-    .post:last-child { border-bottom: none; }
+    .post-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin-bottom: 0.3rem;
+    }
 
     .post-text {
-      font-size: 1.05rem;
-      line-height: 1.65;
+      font-size: 0.92rem;
+      line-height: 1.6;
       white-space: pre-wrap;
       word-wrap: break-word;
     }
+
+    .post-text.collapsed {
+      max-height: 6.4em;
+      overflow: hidden;
+      -webkit-mask-image: linear-gradient(to bottom, #000 60%, transparent 100%);
+      mask-image: linear-gradient(to bottom, #000 60%, transparent 100%);
+    }
+
+    .post-toggle {
+      background: none;
+      border: none;
+      color: #0066cc;
+      cursor: pointer;
+      font-size: 0.78rem;
+      padding: 0.25rem 0 0;
+      font-family: inherit;
+    }
+
+    .post-toggle:hover { text-decoration: underline; }
 
     .post-text a {
       color: #0066cc;
@@ -93,7 +119,7 @@
       align-items: center;
       flex-wrap: wrap;
       gap: 0.4rem;
-      font-size: 0.78rem;
+      font-size: 0.73rem;
       color: #999;
     }
 
@@ -107,7 +133,7 @@
       color: #555;
       border-radius: 12px;
       padding: 1px 9px;
-      font-size: 0.72rem;
+      font-size: 0.7rem;
       cursor: pointer;
       text-decoration: none;
       transition: background 0.15s;
@@ -187,18 +213,43 @@
         div.className = 'post';
         div.dataset.tags = JSON.stringify(post.tags || []);
 
-        let html = '<div class="post-text">' + linkify(post.text) + '</div>';
-        html += '<div class="post-meta">';
-        html += '<span class="post-time">' + formatTime(post.timestamp) + '</span>';
+        if (post.title) {
+          const titleDiv = document.createElement('div');
+          titleDiv.className = 'post-title';
+          titleDiv.textContent = post.title;
+          div.appendChild(titleDiv);
+        }
+
+        const textDiv = document.createElement('div');
+        textDiv.className = 'post-text';
+        textDiv.innerHTML = linkify(post.text);
+        div.appendChild(textDiv);
+
+        const isLong = (post.text.split('\n').length > 4) || (post.text.length > 300);
+        if (isLong) {
+          textDiv.classList.add('collapsed');
+          const btn = document.createElement('button');
+          btn.className = 'post-toggle';
+          btn.textContent = 'show more';
+          btn.addEventListener('click', () => {
+            const collapsed = textDiv.classList.toggle('collapsed');
+            btn.textContent = collapsed ? 'show more' : 'show less';
+          });
+          div.appendChild(btn);
+        }
+
+        let metaHtml = '<span class="post-time">' + formatTime(post.timestamp) + '</span>';
         if (post.tags && post.tags.length) {
           post.tags.forEach(tag => {
-            html += ' <span class="tag-pill" data-tag="' + tag + '">#' + tag + '</span>';
+            metaHtml += ' <span class="tag-pill" data-tag="' + tag + '">#' + tag + '</span>';
           });
         }
-        html += '</div>';
+        const metaDiv = document.createElement('div');
+        metaDiv.className = 'post-meta';
+        metaDiv.innerHTML = metaHtml;
+        div.appendChild(metaDiv);
 
-        div.innerHTML = html;
-        div.querySelectorAll('.tag-pill').forEach(pill => {
+        metaDiv.querySelectorAll('.tag-pill').forEach(pill => {
           pill.addEventListener('click', () => filterByTag(pill.dataset.tag));
         });
         feed.appendChild(div);

@@ -36,14 +36,17 @@ def save_posts(posts):
         f.write("\n")
 
 
-def make_post(text, tags):
+def make_post(text, tags, title=None):
     now = datetime.now(timezone.utc).astimezone()
-    return {
+    post = {
         "id": now.strftime("%Y%m%d%H%M%S"),
         "text": text,
         "tags": tags,
         "timestamp": now.isoformat(),
     }
+    if title:
+        post["title"] = title
+    return post
 
 
 def git_push(text):
@@ -106,9 +109,11 @@ def recent_posts_widget():
 
 
 def editor():
+    title_buffer = Buffer()
     body_buffer = Buffer(multiline=True)
     tags_buffer = Buffer()
 
+    title_window = Window(content=BufferControl(buffer=title_buffer), height=1)
     body_window = Window(
         content=BufferControl(buffer=body_buffer),
         wrap_lines=True,
@@ -118,6 +123,9 @@ def editor():
     tags_window = Window(content=BufferControl(buffer=tags_buffer), height=1)
 
     inner = HSplit([
+        Window(height=1),
+        Window(height=1, content=FormattedTextControl([("class:label", "  title (optional)")])),
+        title_window,
         Window(height=1),
         body_window,
         Window(height=1),
@@ -149,7 +157,7 @@ def editor():
             ("class:sep", "  ·  "),
             ("class:key", "Alt+Enter "), ("class:hint", "newline"),
             ("class:sep", "  ·  "),
-            ("class:key", "Tab "), ("class:hint", "tags"),
+            ("class:key", "Tab "), ("class:hint", "next field"),
         ]),
     )
 
@@ -181,10 +189,12 @@ def editor():
 
     @kb.add("tab")
     def toggle_focus(event):
-        if event.app.layout.has_focus(body_window):
+        if event.app.layout.has_focus(title_window):
+            event.app.layout.focus(body_window)
+        elif event.app.layout.has_focus(body_window):
             event.app.layout.focus(tags_window)
         else:
-            event.app.layout.focus(body_window)
+            event.app.layout.focus(title_window)
 
     style = Style.from_dict({
         "frame.border": "#cccccc",
@@ -198,7 +208,7 @@ def editor():
     })
 
     app = Application(
-        layout=Layout(root, focused_element=body_window),
+        layout=Layout(root, focused_element=title_window),
         key_bindings=kb,
         full_screen=True,
         style=style,
@@ -208,10 +218,11 @@ def editor():
     if result == "cancel":
         return None
 
+    title = title_buffer.text.strip() or None
     text = body_buffer.text.strip()
     tags_str = tags_buffer.text.strip()
     tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else []
-    return (text, tags)
+    return (title, text, tags)
 
 
 def main():
@@ -220,12 +231,12 @@ def main():
         print("cancelled.")
         sys.exit(0)
 
-    text, tags = result
+    title, text, tags = result
     if not text:
         print("empty post, nothing to do.")
         sys.exit(1)
 
-    post = make_post(text, tags)
+    post = make_post(text, tags, title=title)
     posts = load_posts()
     posts.insert(0, post)
     save_posts(posts)
