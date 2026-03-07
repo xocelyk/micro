@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from prompt_toolkit import Application
 from prompt_toolkit.buffer import Buffer
+from prompt_toolkit.document import Document
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout.containers import HSplit, VSplit, Window
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
@@ -49,12 +50,13 @@ def make_post(text, tags, title=None):
     return post
 
 
-def git_push(text):
+def git_push(text, action="post"):
     preview = text[:50] + ("..." if len(text) > 50 else "")
-    msg = f"post: {preview}"
+    msg = f"{action}: {preview}"
     try:
         subprocess.run(["git", "add", "posts.json"], cwd=SCRIPT_DIR, check=True)
         subprocess.run(["git", "commit", "-m", msg], cwd=SCRIPT_DIR, check=True)
+        subprocess.run(["git", "pull", "--rebase"], cwd=SCRIPT_DIR, check=True)
         subprocess.run(["git", "push"], cwd=SCRIPT_DIR, check=True)
     except subprocess.CalledProcessError as e:
         print(f"git error: {e}", file=sys.stderr)
@@ -108,10 +110,114 @@ def recent_posts_widget():
     ]
 
 
-def editor():
-    title_buffer = Buffer()
-    body_buffer = Buffer(multiline=True)
-    tags_buffer = Buffer()
+def picker(posts, action="edit"):
+    if not posts:
+        return None
+
+    selected = [0]
+
+    def get_fragments():
+        fragments = []
+        for i, post in enumerate(posts):
+            ts = post.get("timestamp", "")
+            try:
+                dt = datetime.fromisoformat(ts)
+                date_str = dt.strftime("%b %d, %H:%M")
+            except (ValueError, TypeError):
+                date_str = ""
+
+            prefix_style = "class:picker-selected" if i == selected[0] else "class:picker-item"
+            pointer = "  > " if i == selected[0] else "    "
+            fragments.append((prefix_style, pointer))
+
+            title = post.get("title", "")
+            text = post.get("text", "")
+            preview = title if title else text.split("\n")[0][:60]
+            if len(preview) > 60:
+                preview = preview[:57] + "..."
+            fragments.append((prefix_style, preview))
+
+            fragments.append(("class:picker-meta", f"  {date_str}"))
+            tags = post.get("tags", [])
+            if tags:
+                fragments.append(("class:picker-meta", "  " + " ".join(f"#{t}" for t in tags)))
+            fragments.append(("", "\n"))
+        return fragments
+
+    list_control = FormattedTextControl(get_fragments)
+    list_window = Window(content=list_control, dont_extend_height=True, wrap_lines=True)
+
+    header = Window(
+        height=1,
+        content=FormattedTextControl([("class:title", f"  select post to {action}")]),
+    )
+
+    hint = Window(
+        height=1,
+        content=FormattedTextControl([
+            ("class:hint", "  "),
+            ("class:key", "Up/Down "), ("class:hint", "navigate"),
+            ("class:sep", "  ·  "),
+            ("class:key", "Enter "), ("class:hint", "select"),
+            ("class:sep", "  ·  "),
+            ("class:key", "Ctrl+C "), ("class:hint", "back"),
+        ]),
+    )
+
+    pad = 4
+    root = HSplit([
+        Window(height=D(weight=1)),
+        VSplit([
+            Window(width=pad),
+            HSplit([header, Window(height=1), list_window, Window(height=1), hint]),
+            Window(width=pad),
+        ]),
+        Window(height=D(weight=1)),
+    ])
+
+    kb = KeyBindings()
+
+    @kb.add("up")
+    def move_up(event):
+        if selected[0] > 0:
+            selected[0] -= 1
+
+    @kb.add("down")
+    def move_down(event):
+        if selected[0] < len(posts) - 1:
+            selected[0] += 1
+
+    @kb.add("enter", eager=True)
+    def select(event):
+        event.app.exit(result=selected[0])
+
+    @kb.add("c-c")
+    def cancel(event):
+        event.app.exit(result=None)
+
+    style = Style.from_dict({
+        "title": "#7ab0d2 bold",
+        "picker-selected": "#ffffff bold",
+        "picker-item": "#888888",
+        "picker-meta": "#555555",
+        "key": "#999999",
+        "hint": "#555555",
+        "sep": "#444444",
+    })
+
+    app = Application(
+        layout=Layout(root),
+        key_bindings=kb,
+        full_screen=True,
+        style=style,
+    )
+    return app.run()
+
+
+def editor(initial_title="", initial_body="", initial_tags=""):
+    title_buffer = Buffer(document=Document(initial_title, len(initial_title)))
+    body_buffer = Buffer(multiline=True, document=Document(initial_body, len(initial_body)))
+    tags_buffer = Buffer(document=Document(initial_tags, len(initial_tags)))
 
     title_window = Window(content=BufferControl(buffer=title_buffer), height=1)
     body_window = Window(
@@ -120,13 +226,16 @@ def editor():
     )
     tags_window = Window(content=BufferControl(buffer=tags_buffer), height=1)
 
+    def separator():
+        return Window(height=1, char="─", style="class:separator")
+
     inner = HSplit([
-        Window(height=1),
         Window(height=1, content=FormattedTextControl([("class:label", "  title (optional)")])),
         title_window,
-        Window(height=1),
+        separator(),
+        Window(height=1, content=FormattedTextControl([("class:label", "  body")])),
         body_window,
-        Window(height=1),
+        separator(),
         Window(height=1, content=FormattedTextControl([("class:label", "  tags")])),
         tags_window,
         Window(height=1),
@@ -149,13 +258,15 @@ def editor():
         height=1,
         content=FormattedTextControl([
             ("class:hint", "  "),
-            ("class:key", "Enter "), ("class:hint", "post"),
-            ("class:sep", "  ·  "),
-            ("class:key", "Ctrl+C "), ("class:hint", "cancel"),
-            ("class:sep", "  ·  "),
-            ("class:key", "Alt+Enter "), ("class:hint", "newline"),
+            ("class:key", "Ctrl+S "), ("class:hint", "post"),
             ("class:sep", "  ·  "),
             ("class:key", "Tab "), ("class:hint", "next field"),
+            ("class:sep", "  ·  "),
+            ("class:key", "Ctrl+E "), ("class:hint", "edit prev"),
+            ("class:sep", "  ·  "),
+            ("class:key", "Ctrl+D "), ("class:hint", "delete prev"),
+            ("class:sep", "  ·  "),
+            ("class:key", "Ctrl+C "), ("class:hint", "cancel"),
         ]),
     )
 
@@ -173,17 +284,25 @@ def editor():
     kb = KeyBindings()
 
     @kb.add("enter", eager=True)
-    def submit(event):
-        event.app.exit(result="submit")
-
-    @kb.add("escape", "enter")
-    def newline(event):
+    def newline_or_noop(event):
         if event.app.layout.has_focus(body_window):
             event.current_buffer.insert_text("\n")
+
+    @kb.add("c-s")
+    def submit(event):
+        event.app.exit(result="submit")
 
     @kb.add("c-c")
     def cancel(event):
         event.app.exit(result="cancel")
+
+    @kb.add("c-e")
+    def edit_mode(event):
+        event.app.exit(result="edit")
+
+    @kb.add("c-d")
+    def delete_mode(event):
+        event.app.exit(result="delete")
 
     @kb.add("tab")
     def toggle_focus(event):
@@ -203,6 +322,7 @@ def editor():
         "sep": "#444444",
         "post-text": "#888888",
         "post-meta": "#555555",
+        "separator": "#333333",
     })
 
     app = Application(
@@ -223,17 +343,7 @@ def editor():
     return (title, text, tags)
 
 
-def main():
-    result = editor()
-    if result is None:
-        print("cancelled.")
-        sys.exit(0)
-
-    title, text, tags = result
-    if not text:
-        print("empty post, nothing to do.")
-        sys.exit(1)
-
+def print_preview(title, text, tags):
     print()
     if title:
         print(f"  {title}")
@@ -241,18 +351,132 @@ def main():
     if tags:
         print(f"  {' '.join(f'#{t}' for t in tags)}")
     print()
-    confirm = input("post? (y/n) ").strip().lower()
-    if confirm != "y":
-        print("cancelled.")
-        sys.exit(0)
 
-    post = make_post(text, tags, title=title)
+
+def handle_new_post():
+    init_title, init_body, init_tags = "", "", ""
+    while True:
+        result = editor(init_title, init_body, init_tags)
+        if result is None:
+            print("cancelled.")
+            return
+        if result in ("edit", "delete"):
+            return result
+
+        title, text, tags = result
+        if not text:
+            print("empty post, nothing to do.")
+            return
+
+        print_preview(title, text, tags)
+        confirm = input("post? (y/n/e) ").strip().lower()
+        if confirm == "y":
+            post = make_post(text, tags, title=title)
+            posts = load_posts()
+            posts.insert(0, post)
+            save_posts(posts)
+            print("posted")
+            git_push(text)
+            return
+        elif confirm == "e":
+            init_title = title or ""
+            init_body = text
+            init_tags = ", ".join(tags) if tags else ""
+            continue
+        else:
+            print("cancelled.")
+            return
+
+
+def handle_edit_post():
     posts = load_posts()
-    posts.insert(0, post)
-    save_posts(posts)
+    if not posts:
+        print("no posts to edit.")
+        return
 
-    print("posted")
-    git_push(text)
+    idx = picker(posts, action="edit")
+    if idx is None:
+        return "new"
+
+    post = posts[idx]
+    init_title = post.get("title", "")
+    init_body = post.get("text", "")
+    init_tags = ", ".join(post.get("tags", []))
+
+    while True:
+        result = editor(init_title, init_body, init_tags)
+        if result is None:
+            print("cancelled edit.")
+            return
+        if result in ("edit", "delete"):
+            return result
+
+        title, text, tags = result
+        if not text:
+            print("empty post, nothing to do.")
+            return
+
+        print_preview(title, text, tags)
+        confirm = input("save edit? (y/n/e) ").strip().lower()
+        if confirm == "y":
+            posts[idx]["text"] = text
+            posts[idx]["tags"] = tags
+            if title:
+                posts[idx]["title"] = title
+            elif "title" in posts[idx]:
+                del posts[idx]["title"]
+            save_posts(posts)
+            print("edited")
+            git_push(text, action="post: edit")
+            return
+        elif confirm == "e":
+            init_title = title or ""
+            init_body = text
+            init_tags = ", ".join(tags) if tags else ""
+            continue
+        else:
+            print("cancelled edit.")
+            return
+
+
+def handle_delete_post():
+    posts = load_posts()
+    if not posts:
+        print("no posts to delete.")
+        return
+
+    idx = picker(posts, action="delete")
+    if idx is None:
+        return "new"
+
+    post = posts[idx]
+    title = post.get("title")
+    text = post.get("text", "")
+    tags = post.get("tags", [])
+
+    print_preview(title, text, tags)
+    confirm = input("delete this post? (y/n) ").strip().lower()
+    if confirm == "y":
+        posts.pop(idx)
+        save_posts(posts)
+        print("deleted")
+        git_push(text, action="post: delete")
+    else:
+        print("cancelled delete.")
+
+
+def main():
+    mode = "new"
+    while mode:
+        if mode == "new":
+            mode = handle_new_post()
+        elif mode == "edit":
+            mode = handle_edit_post()
+        elif mode == "delete":
+            mode = handle_delete_post()
+            mode = None
+        else:
+            mode = None
 
 
 if __name__ == "__main__":
