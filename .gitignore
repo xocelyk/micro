@@ -1,1 +1,4 @@
 .DS_Store
+drafts.json
+.post_recovery.json
+__pycache__/

@@ -19,6 +19,8 @@ from prompt_toolkit.widgets import Frame
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 POSTS_FILE = os.path.join(SCRIPT_DIR, "posts.json")
+DRAFTS_FILE = os.path.join(SCRIPT_DIR, "drafts.json")
+RECOVERY_FILE = os.path.join(SCRIPT_DIR, ".post_recovery.json")
 
 
 def load_posts():
@@ -35,6 +37,37 @@ def save_posts(posts):
     with open(POSTS_FILE, "w") as f:
         json.dump(posts, f, indent=2, ensure_ascii=False)
         f.write("\n")
+
+
+def load_drafts():
+    if not os.path.exists(DRAFTS_FILE):
+        return []
+    with open(DRAFTS_FILE, "r") as f:
+        content = f.read().strip()
+        if not content:
+            return []
+        return json.loads(content)
+
+
+def save_drafts(drafts):
+    with open(DRAFTS_FILE, "w") as f:
+        json.dump(drafts, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+
+def load_recovery():
+    if not os.path.exists(RECOVERY_FILE):
+        return None
+    try:
+        with open(RECOVERY_FILE, "r") as f:
+            return json.loads(f.read().strip())
+    except (json.JSONDecodeError, IOError):
+        return None
+
+
+def clear_recovery():
+    if os.path.exists(RECOVERY_FILE):
+        os.remove(RECOVERY_FILE)
 
 
 def make_post(text, tags, title=None):
@@ -65,83 +98,71 @@ def git_push(text, action="post"):
     return True
 
 
-def recent_posts_widget():
-    posts = load_posts()[:3]
-    if not posts:
-        return []
-
-    fragments = []
-    for i, post in enumerate(posts):
-        ts = post.get("timestamp", "")
-        try:
-            dt = datetime.fromisoformat(ts)
-            date_str = dt.strftime("%b %d, %H:%M")
-        except (ValueError, TypeError):
-            date_str = ""
-
-        text = post.get("text", "")
-        lines = text.split("\n")
-        preview = lines[0][:80]
-        if len(lines) > 1 or len(lines[0]) > 80:
-            preview += "..."
-
-        fragments.append(("class:post-text", f"  {preview}\n"))
-        tags = post.get("tags", [])
-        meta = ""
-        if tags:
-            meta += " ".join(f"#{t}" for t in tags) + "  "
-        meta += date_str
-        fragments.append(("class:post-meta", f"  {meta}\n"))
-        if i < len(posts) - 1:
-            fragments.append(("class:post-meta", "\n"))
-
-    return [
-        Window(
-            height=1,
-            content=FormattedTextControl([("class:title", "  recent")]),
-        ),
-        Window(height=1),
-        Window(
-            content=FormattedTextControl(fragments),
-            dont_extend_height=True,
-            wrap_lines=True,
-        ),
-        Window(height=1),
-    ]
+def post_preview_text(post):
+    title = post.get("title", "")
+    text = post.get("text", "")
+    if title:
+        return title if len(title) <= 60 else title[:57] + "..."
+    line = text.split("\n")[0]
+    return line if len(line) <= 60 else line[:57] + "..."
 
 
-def picker(posts, action="edit"):
-    if not posts:
-        return None
+def post_date_str(post):
+    ts = post.get("timestamp", "")
+    try:
+        dt = datetime.fromisoformat(ts)
+        return dt.strftime("%b %d, %H:%M")
+    except (ValueError, TypeError):
+        return ""
+
+
+def feed():
+    drafts = load_drafts()
+    posts = load_posts()
+
+    # items: list of ("new",), ("draft", idx), ("post", idx)
+    items = [("new",)]
+    for i in range(len(drafts)):
+        items.append(("draft", i))
+    for i in range(len(posts)):
+        items.append(("post", i))
 
     selected = [0]
 
     def get_fragments():
         fragments = []
-        for i, post in enumerate(posts):
-            ts = post.get("timestamp", "")
-            try:
-                dt = datetime.fromisoformat(ts)
-                date_str = dt.strftime("%b %d, %H:%M")
-            except (ValueError, TypeError):
-                date_str = ""
+        for item_idx, item in enumerate(items):
+            is_sel = item_idx == selected[0]
+            pointer = "  > " if is_sel else "    "
 
-            prefix_style = "class:picker-selected" if i == selected[0] else "class:picker-item"
-            pointer = "  > " if i == selected[0] else "    "
-            fragments.append((prefix_style, pointer))
-
-            title = post.get("title", "")
-            text = post.get("text", "")
-            preview = title if title else text.split("\n")[0][:60]
-            if len(preview) > 60:
-                preview = preview[:57] + "..."
-            fragments.append((prefix_style, preview))
-
-            fragments.append(("class:picker-meta", f"  {date_str}"))
-            tags = post.get("tags", [])
-            if tags:
-                fragments.append(("class:picker-meta", "  " + " ".join(f"#{t}" for t in tags)))
-            fragments.append(("", "\n"))
+            if item[0] == "new":
+                style = "class:feed-new-sel" if is_sel else "class:feed-new"
+                fragments.append((style, f"{pointer}+ new post\n"))
+                fragments.append(("", "\n"))
+            elif item[0] == "draft":
+                draft = drafts[item[1]]
+                preview = post_preview_text(draft)
+                date = post_date_str(draft)
+                sel_style = "class:feed-selected" if is_sel else "class:feed-item"
+                fragments.append((sel_style, pointer))
+                fragments.append(("class:feed-draft", "[draft] "))
+                fragments.append((sel_style, preview))
+                fragments.append(("class:feed-meta", f"  {date}\n"))
+                tags = draft.get("tags", [])
+                if tags:
+                    fragments.append(("class:feed-meta", "      " + " ".join(f"#{t}" for t in tags) + "\n"))
+                fragments.append(("", "\n"))
+            elif item[0] == "post":
+                post = posts[item[1]]
+                preview = post_preview_text(post)
+                date = post_date_str(post)
+                sel_style = "class:feed-selected" if is_sel else "class:feed-item"
+                fragments.append((sel_style, f"{pointer}{preview}"))
+                fragments.append(("class:feed-meta", f"  {date}\n"))
+                tags = post.get("tags", [])
+                if tags:
+                    fragments.append(("class:feed-meta", "      " + " ".join(f"#{t}" for t in tags) + "\n"))
+                fragments.append(("", "\n"))
         return fragments
 
     list_control = FormattedTextControl(get_fragments)
@@ -149,7 +170,7 @@ def picker(posts, action="edit"):
 
     header = Window(
         height=1,
-        content=FormattedTextControl([("class:title", f"  select post to {action}")]),
+        content=FormattedTextControl([("class:title", "  loremkyle")]),
     )
 
     hint = Window(
@@ -160,7 +181,9 @@ def picker(posts, action="edit"):
             ("class:sep", "  ·  "),
             ("class:key", "Enter "), ("class:hint", "select"),
             ("class:sep", "  ·  "),
-            ("class:key", "Ctrl+C "), ("class:hint", "back"),
+            ("class:key", "d "), ("class:hint", "delete"),
+            ("class:sep", "  ·  "),
+            ("class:key", "q "), ("class:hint", "quit"),
         ]),
     )
 
@@ -169,7 +192,7 @@ def picker(posts, action="edit"):
         Window(height=D(weight=1)),
         VSplit([
             Window(width=pad),
-            HSplit([header, Window(height=1), list_window, Window(height=1), hint]),
+            HSplit([header, Window(height=1), list_window, hint]),
             Window(width=pad),
         ]),
         Window(height=D(weight=1)),
@@ -184,12 +207,26 @@ def picker(posts, action="edit"):
 
     @kb.add("down")
     def move_down(event):
-        if selected[0] < len(posts) - 1:
+        if selected[0] < len(items) - 1:
             selected[0] += 1
 
     @kb.add("enter", eager=True)
-    def select(event):
-        event.app.exit(result=selected[0])
+    def select_item(event):
+        item = items[selected[0]]
+        if item[0] == "new":
+            event.app.exit(result="new")
+        else:
+            event.app.exit(result=item)
+
+    @kb.add("d")
+    def delete_shortcut(event):
+        item = items[selected[0]]
+        if item[0] in ("post", "draft"):
+            event.app.exit(result=("delete", item[0], item[1]))
+
+    @kb.add("q")
+    def quit_app(event):
+        event.app.exit(result=None)
 
     @kb.add("c-c")
     def cancel(event):
@@ -197,9 +234,12 @@ def picker(posts, action="edit"):
 
     style = Style.from_dict({
         "title": "#7ab0d2 bold",
-        "picker-selected": "#ffffff bold",
-        "picker-item": "#888888",
-        "picker-meta": "#555555",
+        "feed-new": "#7ab0d2",
+        "feed-new-sel": "#7ab0d2 bold",
+        "feed-selected": "#ffffff bold",
+        "feed-item": "#888888",
+        "feed-draft": "#c49a6c",
+        "feed-meta": "#555555",
         "key": "#999999",
         "hint": "#555555",
         "sep": "#444444",
@@ -214,7 +254,7 @@ def picker(posts, action="edit"):
     return app.run()
 
 
-def editor(initial_title="", initial_body="", initial_tags=""):
+def editor(initial_title="", initial_body="", initial_tags="", mode="new post"):
     title_buffer = Buffer(document=Document(initial_title, len(initial_title)))
     body_buffer = Buffer(multiline=True, document=Document(initial_body, len(initial_body)))
     tags_buffer = Buffer(document=Document(initial_tags, len(initial_tags)))
@@ -247,27 +287,29 @@ def editor(initial_title="", initial_body="", initial_tags=""):
         Window(width=2),
     ])
 
-    title = Window(
+    header = Window(
         height=1,
-        content=FormattedTextControl([("class:title", "  new post")]),
+        content=FormattedTextControl([("class:title", f"  {mode}")]),
     )
 
     framed = Frame(padded)
 
-    hint = Window(
-        height=1,
-        content=FormattedTextControl([
+    def get_hint():
+        count = len(body_buffer.text.strip())
+        return [
             ("class:hint", "  "),
-            ("class:key", "Ctrl+S "), ("class:hint", "post"),
+            ("class:key", "Ctrl+S "), ("class:hint", "save"),
             ("class:sep", "  ·  "),
             ("class:key", "Tab "), ("class:hint", "next field"),
             ("class:sep", "  ·  "),
-            ("class:key", "Ctrl+E "), ("class:hint", "edit prev"),
-            ("class:sep", "  ·  "),
-            ("class:key", "Ctrl+D "), ("class:hint", "delete prev"),
-            ("class:sep", "  ·  "),
             ("class:key", "Ctrl+C "), ("class:hint", "cancel"),
-        ]),
+            ("class:sep", "  ·  "),
+            ("class:counter", f"{count} chars"),
+        ]
+
+    hint = Window(
+        height=1,
+        content=FormattedTextControl(get_hint),
     )
 
     pad = 4
@@ -275,7 +317,7 @@ def editor(initial_title="", initial_body="", initial_tags=""):
         Window(height=D(weight=1)),
         VSplit([
             Window(width=pad),
-            HSplit(recent_posts_widget() + [title, framed, hint]),
+            HSplit([header, framed, hint]),
             Window(width=pad),
         ]),
         Window(height=D(weight=1)),
@@ -296,20 +338,21 @@ def editor(initial_title="", initial_body="", initial_tags=""):
     def cancel(event):
         event.app.exit(result="cancel")
 
-    @kb.add("c-e")
-    def edit_mode(event):
-        event.app.exit(result="edit")
-
-    @kb.add("c-d")
-    def delete_mode(event):
-        event.app.exit(result="delete")
-
     @kb.add("tab")
-    def toggle_focus(event):
+    def focus_next(event):
         if event.app.layout.has_focus(title_window):
             event.app.layout.focus(body_window)
         elif event.app.layout.has_focus(body_window):
             event.app.layout.focus(tags_window)
+        else:
+            event.app.layout.focus(title_window)
+
+    @kb.add("s-tab")
+    def focus_prev(event):
+        if event.app.layout.has_focus(title_window):
+            event.app.layout.focus(tags_window)
+        elif event.app.layout.has_focus(tags_window):
+            event.app.layout.focus(body_window)
         else:
             event.app.layout.focus(title_window)
 
@@ -320,10 +363,22 @@ def editor(initial_title="", initial_body="", initial_tags=""):
         "key": "#999999",
         "hint": "#555555",
         "sep": "#444444",
-        "post-text": "#888888",
-        "post-meta": "#555555",
         "separator": "#333333",
+        "counter": "#555555",
     })
+
+    def save_recovery(_=None):
+        data = {
+            "title": title_buffer.text,
+            "body": body_buffer.text,
+            "tags": tags_buffer.text,
+        }
+        with open(RECOVERY_FILE, "w") as f:
+            json.dump(data, f)
+
+    title_buffer.on_text_changed += save_recovery
+    body_buffer.on_text_changed += save_recovery
+    tags_buffer.on_text_changed += save_recovery
 
     app = Application(
         layout=Layout(root, focused_element=title_window),
@@ -332,15 +387,17 @@ def editor(initial_title="", initial_body="", initial_tags=""):
         style=style,
     )
     result = app.run()
-
-    if result == "cancel":
-        return None
+    clear_recovery()
 
     title = title_buffer.text.strip() or None
     text = body_buffer.text.strip()
     tags_str = tags_buffer.text.strip()
     tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else []
-    return (title, text, tags)
+
+    if result == "cancel":
+        return ("cancel", title, text, tags)
+
+    return ("submit", title, text, tags)
 
 
 def print_preview(title, text, tags):
@@ -353,17 +410,26 @@ def print_preview(title, text, tags):
     print()
 
 
-def handle_new_post():
-    init_title, init_body, init_tags = "", "", ""
-    while True:
-        result = editor(init_title, init_body, init_tags)
-        if result is None:
-            print("cancelled.")
-            return
-        if result in ("edit", "delete"):
-            return result
+def offer_save_draft(title, text, tags):
+    if not text:
+        return
+    confirm = input("save as draft? (y/n) ").strip().lower()
+    if confirm == "y":
+        draft = make_post(text, tags, title=title)
+        drafts = load_drafts()
+        drafts.insert(0, draft)
+        save_drafts(drafts)
+        print("draft saved.")
 
-        title, text, tags = result
+
+def handle_new_post(init_title="", init_body="", init_tags=""):
+    while True:
+        action, title, text, tags = editor(init_title, init_body, init_tags, mode="new post")
+
+        if action == "cancel":
+            offer_save_draft(title, text, tags)
+            return
+
         if not text:
             print("empty post, nothing to do.")
             return
@@ -384,50 +450,53 @@ def handle_new_post():
             init_tags = ", ".join(tags) if tags else ""
             continue
         else:
-            print("cancelled.")
+            offer_save_draft(title, text, tags)
             return
 
 
-def handle_edit_post():
-    posts = load_posts()
-    if not posts:
-        print("no posts to edit.")
+def handle_draft(draft_idx):
+    drafts = load_drafts()
+    if draft_idx >= len(drafts):
         return
+    draft = drafts[draft_idx]
 
-    idx = picker(posts, action="edit")
-    if idx is None:
-        return "new"
-
-    post = posts[idx]
-    init_title = post.get("title", "")
-    init_body = post.get("text", "")
-    init_tags = ", ".join(post.get("tags", []))
+    init_title = draft.get("title", "")
+    init_body = draft.get("text", "")
+    init_tags = ", ".join(draft.get("tags", []))
 
     while True:
-        result = editor(init_title, init_body, init_tags)
-        if result is None:
-            print("cancelled edit.")
-            return
-        if result in ("edit", "delete"):
-            return result
+        action, title, text, tags = editor(init_title, init_body, init_tags, mode="draft")
 
-        title, text, tags = result
+        if action == "cancel":
+            if text:
+                confirm = input("update draft? (y/n) ").strip().lower()
+                if confirm == "y":
+                    drafts[draft_idx]["text"] = text
+                    drafts[draft_idx]["tags"] = tags
+                    if title:
+                        drafts[draft_idx]["title"] = title
+                    elif "title" in drafts[draft_idx]:
+                        del drafts[draft_idx]["title"]
+                    save_drafts(drafts)
+                    print("draft updated.")
+            return
+
         if not text:
             print("empty post, nothing to do.")
             return
 
         print_preview(title, text, tags)
-        confirm = input("save edit? (y/n/e) ").strip().lower()
+        confirm = input("publish? (y/n/e) ").strip().lower()
         if confirm == "y":
-            posts[idx]["text"] = text
-            posts[idx]["tags"] = tags
-            if title:
-                posts[idx]["title"] = title
-            elif "title" in posts[idx]:
-                del posts[idx]["title"]
+            # publish: add to posts, remove from drafts
+            post = make_post(text, tags, title=title)
+            posts = load_posts()
+            posts.insert(0, post)
             save_posts(posts)
-            print("edited")
-            git_push(text, action="post: edit")
+            drafts.pop(draft_idx)
+            save_drafts(drafts)
+            print("posted")
+            git_push(text)
             return
         elif confirm == "e":
             init_title = title or ""
@@ -435,48 +504,146 @@ def handle_edit_post():
             init_tags = ", ".join(tags) if tags else ""
             continue
         else:
-            print("cancelled edit.")
+            confirm = input("update draft? (y/n) ").strip().lower()
+            if confirm == "y":
+                drafts[draft_idx]["text"] = text
+                drafts[draft_idx]["tags"] = tags
+                if title:
+                    drafts[draft_idx]["title"] = title
+                elif "title" in drafts[draft_idx]:
+                    del drafts[draft_idx]["title"]
+                save_drafts(drafts)
+                print("draft updated.")
             return
 
 
-def handle_delete_post():
+def handle_post_action(post_idx):
     posts = load_posts()
-    if not posts:
-        print("no posts to delete.")
+    if post_idx >= len(posts):
         return
-
-    idx = picker(posts, action="delete")
-    if idx is None:
-        return "new"
-
-    post = posts[idx]
+    post = posts[post_idx]
     title = post.get("title")
     text = post.get("text", "")
     tags = post.get("tags", [])
 
     print_preview(title, text, tags)
-    confirm = input("delete this post? (y/n) ").strip().lower()
-    if confirm == "y":
-        posts.pop(idx)
-        save_posts(posts)
-        print("deleted")
-        git_push(text, action="post: delete")
-    else:
-        print("cancelled delete.")
+    action = input("(e)dit / (d)elete / (b)ack? ").strip().lower()
+
+    if action == "e":
+        init_title = post.get("title", "")
+        init_body = text
+        init_tags = ", ".join(tags)
+
+        while True:
+            result_action, new_title, new_text, new_tags = editor(
+                init_title, init_body, init_tags, mode="edit post"
+            )
+
+            if result_action == "cancel":
+                print("cancelled edit.")
+                return
+
+            if not new_text:
+                print("empty post, nothing to do.")
+                return
+
+            print_preview(new_title, new_text, new_tags)
+            confirm = input("save edit? (y/n/e) ").strip().lower()
+            if confirm == "y":
+                posts[post_idx]["text"] = new_text
+                posts[post_idx]["tags"] = new_tags
+                if new_title:
+                    posts[post_idx]["title"] = new_title
+                elif "title" in posts[post_idx]:
+                    del posts[post_idx]["title"]
+                save_posts(posts)
+                print("edited")
+                git_push(new_text, action="post: edit")
+                return
+            elif confirm == "e":
+                init_title = new_title or ""
+                init_body = new_text
+                init_tags = ", ".join(new_tags) if new_tags else ""
+                continue
+            else:
+                print("cancelled edit.")
+                return
+
+    elif action == "d":
+        confirm = input("delete this post? (y/n) ").strip().lower()
+        if confirm == "y":
+            posts.pop(post_idx)
+            save_posts(posts)
+            print("deleted")
+            git_push(text, action="post: delete")
+        else:
+            print("cancelled delete.")
+
+
+def handle_delete(item_type, idx):
+    if item_type == "draft":
+        drafts = load_drafts()
+        if idx >= len(drafts):
+            return
+        draft = drafts[idx]
+        title = draft.get("title")
+        text = draft.get("text", "")
+        tags = draft.get("tags", [])
+        print_preview(title, text, tags)
+        confirm = input("delete this draft? (y/n) ").strip().lower()
+        if confirm == "y":
+            drafts.pop(idx)
+            save_drafts(drafts)
+            print("draft deleted.")
+        else:
+            print("cancelled.")
+    elif item_type == "post":
+        posts = load_posts()
+        if idx >= len(posts):
+            return
+        post = posts[idx]
+        title = post.get("title")
+        text = post.get("text", "")
+        tags = post.get("tags", [])
+        print_preview(title, text, tags)
+        confirm = input("delete this post? (y/n) ").strip().lower()
+        if confirm == "y":
+            posts.pop(idx)
+            save_posts(posts)
+            print("deleted")
+            git_push(text, action="post: delete")
+        else:
+            print("cancelled delete.")
 
 
 def main():
-    mode = "new"
-    while mode:
-        if mode == "new":
-            mode = handle_new_post()
-        elif mode == "edit":
-            mode = handle_edit_post()
-        elif mode == "delete":
-            mode = handle_delete_post()
-            mode = None
-        else:
-            mode = None
+    recovery = load_recovery()
+    if recovery:
+        body = recovery.get("body", "").strip()
+        if body:
+            print(f"  recovered: {body[:60]}{'...' if len(body) > 60 else ''}")
+            confirm = input("recover unsaved post? (y/n) ").strip().lower()
+            if confirm == "y":
+                handle_new_post(
+                    init_title=recovery.get("title", ""),
+                    init_body=recovery.get("body", ""),
+                    init_tags=recovery.get("tags", ""),
+                )
+        clear_recovery()
+
+    while True:
+        result = feed()
+        if result is None:
+            return
+        if result == "new":
+            handle_new_post()
+        elif isinstance(result, tuple):
+            if result[0] == "draft":
+                handle_draft(result[1])
+            elif result[0] == "post":
+                handle_post_action(result[1])
+            elif result[0] == "delete":
+                handle_delete(result[1], result[2])
 
 
 if __name__ == "__main__":
